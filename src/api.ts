@@ -11,6 +11,15 @@ export class YeoAPI {
     private readonly auth: AuthProvider
   ) {
     this.client = axios.create({ baseURL: apiUrl });
+    this.client.interceptors.response.use(
+      (res) => res,
+      (err) => {
+        const status = err.response?.status;
+        const data = err.response?.data;
+        console.error(`[API] ${err.config?.method?.toUpperCase()} ${err.config?.url} → ${status}`, data ?? err.message);
+        return Promise.reject(err);
+      }
+    );
   }
 
   private async headers() {

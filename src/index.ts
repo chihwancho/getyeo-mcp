@@ -15,6 +15,9 @@ const EMAIL     = process.env.YEO_EMAIL     ?? '';
 const PASSWORD  = process.env.YEO_PASSWORD  ?? '';
 const PORT      = parseInt(process.env.PORT ?? '3001', 10);
 
+console.log(`[YEO-MCP] Starting with API_URL=${API_URL}, PORT=${PORT}`);
+console.log(`[YEO-MCP] EMAIL configured: ${!!EMAIL}, PASSWORD configured: ${!!PASSWORD}`);
+
 if (!EMAIL || !PASSWORD) {
   console.error('YEO_EMAIL and YEO_PASSWORD must be set');
   process.exit(1);
@@ -431,7 +434,7 @@ app.post('/mcp', async (req, res) => {
 // Health check
 app.get('/health', (_req, res) => res.json({ status: 'ok', server: 'yeo-mcp' }));
 
-app.listen(PORT, () => {
-  console.log(`Yeo MCP server running on port ${PORT}`);
-  console.log(`API: ${API_URL}`);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`[YEO-MCP] Server running on 0.0.0.0:${PORT}`);
+  console.log(`[YEO-MCP] API: ${API_URL}`);
 });
