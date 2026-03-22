@@ -33,6 +33,67 @@ const api  = new YeoAPI(API_URL, auth);
 const ok  = (data: unknown) => ({ content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] });
 const err = (e: unknown)    => ({ content: [{ type: 'text' as const, text: `Error: ${e instanceof Error ? e.message : String(e)}` }], isError: true as const });
 
+function summarizeVacations(data: unknown) {
+  if (!Array.isArray(data)) return data;
+  return data.map((item) => {
+    if (typeof item !== 'object' || item === null) return item;
+    const obj = item as Record<string, unknown>;
+    const days = Array.isArray(obj.days) ? obj.days : [];
+    return {
+      id: obj.id,
+      name: obj.name,
+      startDate: obj.startDate,
+      endDate: obj.endDate,
+      dayCount: days.length,
+    };
+  });
+}
+
+/** Strips nested activities from each day (same bloat as list_vacations had). */
+function summarizeDays(data: unknown) {
+  if (!Array.isArray(data)) return data;
+  return data.map((item) => {
+    if (typeof item !== 'object' || item === null) return item;
+    const obj = item as Record<string, unknown>;
+    const activities = Array.isArray(obj.activities) ? obj.activities : [];
+    return {
+      id: obj.id,
+      date: obj.date,
+      homestayId: obj.homestayId,
+      notes: obj.notes,
+      activityCount: activities.length,
+    };
+  });
+}
+
+const ACTIVITY_SUMMARY_MAX_NOTES = 200;
+
+/** Slim rows for list_activities — omits large / noisy fields (metadata, timestamps, etc.). */
+function summarizeActivities(data: unknown) {
+  if (!Array.isArray(data)) return data;
+  return data.map((item) => {
+    if (typeof item !== 'object' || item === null) return item;
+    const a = item as Record<string, unknown>;
+    let notes = a.notes;
+    if (typeof notes === 'string' && notes.length > ACTIVITY_SUMMARY_MAX_NOTES) {
+      notes = `${notes.slice(0, ACTIVITY_SUMMARY_MAX_NOTES)}…`;
+    }
+    return {
+      id: a.id,
+      vacationId: a.vacationId,
+      dayId: a.dayId,
+      type: a.type,
+      name: a.name,
+      location: a.location,
+      time: a.time,
+      duration: a.duration,
+      priority: a.priority,
+      timeConstraint: a.timeConstraint,
+      notes,
+    };
+  });
+}
+
 // ============================================================================
 // MCP SERVER
 // ============================================================================
@@ -48,7 +109,7 @@ function buildServer(): McpServer {
     description: 'List all vacations for the user. Returns id, name, startDate, endDate, and day count for each.',
     inputSchema: {},
   }, async () => {
-    try { return ok(await api.listVacations()); } catch (e) { return err(e); }
+    try { return ok(summarizeVacations(await api.listVacations())); } catch (e) { return err(e); }
   });
 
   server.registerTool('get_vacation', {
@@ -154,7 +215,7 @@ function buildServer(): McpServer {
     description: 'List all days for a vacation with their dates and homestay assignments.',
     inputSchema: { vacationId: z.string() },
   }, async ({ vacationId }) => {
-    try { return ok(await api.getDays(vacationId)); } catch (e) { return err(e); }
+    try { return ok(summarizeDays(await api.getDays(vacationId))); } catch (e) { return err(e); }
   });
 
   server.registerTool('update_day_notes', {
@@ -179,7 +240,13 @@ function buildServer(): McpServer {
       dayId:      z.string().optional().describe('"null" for unassigned pool, a day ID for specific day, omit for all'),
     },
   }, async ({ vacationId, dayId }) => {
-    try { return ok(await api.listActivities(vacationId, dayId === 'null' ? null : dayId)); } catch (e) { return err(e); }
+    try {
+      return ok(
+        summarizeActivities(await api.listActivities(vacationId, dayId === 'null' ? null : dayId)),
+      );
+    } catch (e) {
+      return err(e);
+    }
   });
 
   server.registerTool('create_activity', {
