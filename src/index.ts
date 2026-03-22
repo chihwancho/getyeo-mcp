@@ -411,13 +411,21 @@ const app = express();
 app.use(express.json());
 
 app.post('/mcp', async (req, res) => {
-  const server = buildServer();
-  const transport = new StreamableHTTPServerTransport({
-    sessionIdGenerator: undefined, // stateless
-  });
-  res.on('close', () => transport.close());
-  await server.connect(transport);
-  await transport.handleRequest(req, res, req.body);
+  const method = req.body?.method ?? 'unknown';
+  const tool = req.body?.params?.name ?? '';
+  console.log(`[MCP] ${new Date().toISOString()} ${method}${tool ? ` → ${tool}` : ''}`);
+  try {
+    const server = buildServer();
+    const transport = new StreamableHTTPServerTransport({
+      sessionIdGenerator: undefined, // stateless
+    });
+    res.on('close', () => transport.close());
+    await server.connect(transport);
+    await transport.handleRequest(req, res, req.body);
+  } catch (err) {
+    console.error(`[MCP] Error:`, err);
+    res.status(500).json({ error: String(err) });
+  }
 });
 
 // Health check
