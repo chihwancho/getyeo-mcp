@@ -1,5 +1,6 @@
 // src/index.ts — Yeo MCP Server
 import express from 'express';
+import axios from 'axios';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { z } from 'zod';
@@ -30,12 +31,43 @@ const api  = new YeoAPI(API_URL, auth);
 // HELPERS
 // ============================================================================
 
-const ok  = (data: unknown) => ({ content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] });
-const err = (e: unknown)    => ({ content: [{ type: 'text' as const, text: `Error: ${e instanceof Error ? e.message : String(e)}` }], isError: true as const });
+/** Compact JSON — MCP clients can hit size limits with pretty-printed payloads. */
+const ok  = (data: unknown) => ({ content: [{ type: 'text' as const, text: JSON.stringify(data) }] });
+
+function formatErr(e: unknown): string {
+  if (axios.isAxiosError(e)) {
+    const status = e.response?.status;
+    const body = e.response?.data;
+    const snippet =
+      typeof body === 'string' ? body : body !== undefined ? JSON.stringify(body) : e.message;
+    return `HTTP ${status ?? '?'} ${e.config?.method?.toUpperCase() ?? ''} ${e.config?.url ?? ''}: ${snippet.slice(0, 800)}`;
+  }
+  if (e instanceof Error) return e.message;
+  return String(e);
+}
+
+const err = (e: unknown) => ({ content: [{ type: 'text' as const, text: `Error: ${formatErr(e)}` }], isError: true as const });
+
+/** API may return a bare array or `{ data: [...] }` etc. */
+function unwrapArray(data: unknown): unknown[] | null {
+  if (Array.isArray(data)) return data;
+  if (data && typeof data === 'object') {
+    const o = data as Record<string, unknown>;
+    for (const key of ['data', 'vacations', 'items', 'results'] as const) {
+      const v = o[key];
+      if (Array.isArray(v)) return v;
+    }
+  }
+  return null;
+}
 
 function summarizeVacations(data: unknown) {
-  if (!Array.isArray(data)) return data;
-  return data.map((item) => {
+  const rows = unwrapArray(data);
+  if (rows === null) {
+    console.error('[list_vacations] expected an array (or wrapped array), got:', typeof data);
+    return [];
+  }
+  return rows.map((item) => {
     if (typeof item !== 'object' || item === null) return item;
     const obj = item as Record<string, unknown>;
     const days = Array.isArray(obj.days) ? obj.days : [];
@@ -51,8 +83,12 @@ function summarizeVacations(data: unknown) {
 
 /** Strips nested activities from each day (same bloat as list_vacations had). */
 function summarizeDays(data: unknown) {
-  if (!Array.isArray(data)) return data;
-  return data.map((item) => {
+  const rows = unwrapArray(data);
+  if (rows === null) {
+    console.error('[list_days] expected an array (or wrapped array), got:', typeof data);
+    return [];
+  }
+  return rows.map((item) => {
     if (typeof item !== 'object' || item === null) return item;
     const obj = item as Record<string, unknown>;
     const activities = Array.isArray(obj.activities) ? obj.activities : [];
@@ -70,8 +106,12 @@ const ACTIVITY_SUMMARY_MAX_NOTES = 200;
 
 /** Slim rows for list_activities — omits large / noisy fields (metadata, timestamps, etc.). */
 function summarizeActivities(data: unknown) {
-  if (!Array.isArray(data)) return data;
-  return data.map((item) => {
+  const rows = unwrapArray(data);
+  if (rows === null) {
+    console.error('[list_activities] expected an array (or wrapped array), got:', typeof data);
+    return [];
+  }
+  return rows.map((item) => {
     if (typeof item !== 'object' || item === null) return item;
     const a = item as Record<string, unknown>;
     let notes = a.notes;
@@ -107,9 +147,13 @@ function buildServer(): McpServer {
 
   server.registerTool('list_vacations', {
     description: 'List all vacations for the user. Returns id, name, startDate, endDate, and day count for each.',
-    inputSchema: {},
   }, async () => {
-    try { return ok(summarizeVacations(await api.listVacations())); } catch (e) { return err(e); }
+    try {
+      return ok(summarizeVacations(await api.listVacations()));
+    } catch (e) {
+      console.error('[list_vacations]', formatErr(e));
+      return err(e);
+    }
   });
 
   server.registerTool('get_vacation', {
