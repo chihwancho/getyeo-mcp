@@ -410,13 +410,8 @@ function buildServer(): McpServer {
 // EXPRESS + STREAMABLE HTTP TRANSPORT
 // ============================================================================
 
-process.on('SIGTERM', () => {
-  console.log('[YEO-MCP] Received SIGTERM - Railway health check may be failing');
-  console.log('[YEO-MCP] Check that the domain is configured in Railway Networking settings');
-  process.exit(0);
-});
-
 const app = express();
+app.set('trust proxy', 1);
 app.use(express.json());
 
 // Health check — registered first so it responds immediately
@@ -449,7 +444,26 @@ app.post('/mcp', async (req, res) => {
 
 
 
-app.listen(PORT, '0.0.0.0', () => {
+const httpServer = app.listen(PORT, '0.0.0.0', () => {
   console.log(`[YEO-MCP] Server running on 0.0.0.0:${PORT}`);
   console.log(`[YEO-MCP] API: ${API_URL}`);
 });
+
+function shutdown(signal: string) {
+  console.log(`[YEO-MCP] ${signal} received, closing HTTP server`);
+  httpServer.close((err) => {
+    if (err) {
+      console.error('[YEO-MCP] Error while closing server:', err);
+      process.exit(1);
+    }
+    console.log('[YEO-MCP] HTTP server closed');
+    process.exit(0);
+  });
+  setTimeout(() => {
+    console.error('[YEO-MCP] Forced exit after shutdown timeout');
+    process.exit(1);
+  }, 25_000).unref();
+}
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
