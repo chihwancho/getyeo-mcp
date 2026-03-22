@@ -410,8 +410,24 @@ function buildServer(): McpServer {
 // EXPRESS + STREAMABLE HTTP TRANSPORT
 // ============================================================================
 
+process.on('SIGTERM', () => {
+  console.log('[YEO-MCP] Received SIGTERM - Railway health check may be failing');
+  console.log('[YEO-MCP] Check that the domain is configured in Railway Networking settings');
+  process.exit(0);
+});
+
 const app = express();
 app.use(express.json());
+
+// Health check — registered first so it responds immediately
+app.get('/health', (_req, res) => {
+  console.log('[YEO-MCP] Health check hit');
+  res.json({ status: 'ok', server: 'yeo-mcp' });
+});
+
+app.get('/', (_req, res) => {
+  res.json({ status: 'ok', server: 'yeo-mcp' });
+});
 
 app.post('/mcp', async (req, res) => {
   const method = req.body?.method ?? 'unknown';
@@ -431,8 +447,7 @@ app.post('/mcp', async (req, res) => {
   }
 });
 
-// Health check
-app.get('/health', (_req, res) => res.json({ status: 'ok', server: 'yeo-mcp' }));
+
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`[YEO-MCP] Server running on 0.0.0.0:${PORT}`);
