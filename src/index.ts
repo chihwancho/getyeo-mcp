@@ -130,6 +130,7 @@ function summarizeActivities(data: unknown) {
       priority: a.priority,
       timeConstraint: a.timeConstraint,
       notes,
+      travelTimeTo: a.travelTimeTo ?? null,  // add this
     };
   });
 }
